@@ -1,15 +1,22 @@
 from ..database import Base
 from .user import User
-from .api_key import ApiKey
 from .wallet import Wallet, Transaction, TransactionType, TransactionStatus
+from .sim import Sim, SimStatus
+from .sms import SMS, SMSStatus, SMSDirection
+from .api_key import ApiKey
 
 # This ensures all models are imported and available when importing from models
 __all__ = [
     'Base',
     'User',
-    'ApiKey',
     'Wallet',
     'Transaction',
     'TransactionType',
-    'TransactionStatus'
+    'TransactionStatus',
+    'Sim',
+    'SimStatus',
+    'SMS',
+    'SMSStatus',
+    'SMSDirection',
+    'ApiKey'
 ] 

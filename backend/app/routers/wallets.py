@@ -37,26 +37,30 @@ def create_transaction(
             detail="Wallet not found"
         )
     
+    # For debit transactions, check balance first
+    if transaction.type == TransactionType.DEBIT:
+        if wallet.balance < transaction.amount:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Insufficient funds"
+            )
+    
     # Create the transaction
     db_transaction = Transaction(
         wallet_id=wallet.id,
         type=transaction.type,
         amount=transaction.amount,
         description=transaction.description,
-        status=TransactionStatus.PENDING
+        status=TransactionStatus.COMPLETED  # Set to COMPLETED by default
     )
     db.add(db_transaction)
     
-    # Update wallet balance
-    if transaction.type == TransactionType.CREDIT:
-        wallet.balance += transaction.amount
-    else:  # DEBIT
-        if wallet.balance < transaction.amount:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Insufficient funds"
-            )
-        wallet.balance -= transaction.amount
+    # Update wallet balance only for completed transactions
+    if db_transaction.status == TransactionStatus.COMPLETED:
+        if transaction.type == TransactionType.CREDIT:
+            wallet.balance += transaction.amount
+        else:  # DEBIT
+            wallet.balance -= transaction.amount
     
     db.commit()
     db.refresh(db_transaction)
@@ -70,4 +74,52 @@ def read_transactions(
     wallet = db.query(Wallet).filter(Wallet.user_id == current_user.id).first()
     if not wallet:
         return []
-    return db.query(Transaction).filter(Transaction.wallet_id == wallet.id).all() 
+    return db.query(Transaction).filter(Transaction.wallet_id == wallet.id).all()
+
+@router.patch("/transactions/{transaction_id}/status", response_model=TransactionSchema)
+def update_transaction_status(
+    transaction_id: int,
+    status: TransactionStatus,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    # Get the wallet first to ensure user has access
+    wallet = db.query(Wallet).filter(Wallet.user_id == current_user.id).first()
+    if not wallet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Wallet not found"
+        )
+    
+    # Get the transaction
+    transaction = db.query(Transaction).filter(
+        Transaction.id == transaction_id,
+        Transaction.wallet_id == wallet.id
+    ).first()
+    
+    if not transaction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transaction not found"
+        )
+    
+    # Update transaction status
+    old_status = transaction.status
+    transaction.status = status
+    
+    # Update wallet balance if status changed to/from completed
+    if old_status != status:
+        if status == TransactionStatus.COMPLETED:
+            if transaction.type == TransactionType.CREDIT:
+                wallet.balance += transaction.amount
+            else:  # DEBIT
+                wallet.balance -= transaction.amount
+        elif old_status == TransactionStatus.COMPLETED:
+            if transaction.type == TransactionType.CREDIT:
+                wallet.balance -= transaction.amount
+            else:  # DEBIT
+                wallet.balance += transaction.amount
+    
+    db.commit()
+    db.refresh(transaction)
+    return transaction 

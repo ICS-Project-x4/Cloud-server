@@ -26,4 +26,8 @@ def get_db():
     try:
         yield db
     finally:
-        db.close() 
+        db.close()
+
+def recreate_tables():
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine) 

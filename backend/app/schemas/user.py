@@ -4,14 +4,14 @@ from datetime import datetime
 
 class UserBase(BaseModel):
     email: EmailStr
-    name: str
+    username: str
 
 class UserCreate(UserBase):
     password: str
 
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
-    name: Optional[str] = None
+    username: Optional[str] = None
     password: Optional[str] = None
 
 class UserInDBBase(UserBase):
@@ -24,6 +24,9 @@ class UserInDBBase(UserBase):
         from_attributes = True
 
 class User(UserInDBBase):
+    pass
+
+class UserResponse(UserInDBBase):
     pass
 
 class UserInDB(UserInDBBase):

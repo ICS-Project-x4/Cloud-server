@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from .database import engine, Base
 from . import models
-from .routers import auth_router, api_keys_router, wallets_router
+from .routers import auth_router, api_keys_router, wallets_router, sims_router, sms_router
 from .config import get_settings
 
 settings = get_settings()
@@ -34,6 +34,8 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(api_keys_router, prefix="/api/api-keys", tags=["api-keys"])
 app.include_router(wallets_router, prefix="/api/wallets", tags=["wallets"])
+app.include_router(sims_router, prefix="/api/sims", tags=["sims"])
+app.include_router(sms_router, prefix="/api/sms", tags=["sms"])
 
 @app.get("/")
 async def root():

@@ -15,6 +15,7 @@ class TransactionStatus(str, enum.Enum):
 
 class Wallet(Base):
     __tablename__ = "wallets"
+    __table_args__ = {'extend_existing': True} # <--- ADD THIS
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True)
@@ -28,14 +29,16 @@ class Wallet(Base):
 
 class Transaction(Base):
     __tablename__ = "transactions"
+    __table_args__ = {'extend_existing': True}
 
     id = Column(Integer, primary_key=True, index=True)
-    wallet_id = Column(Integer, ForeignKey("wallets.id"))
+    wallet_id = Column(Integer, ForeignKey("wallets.id"), nullable=False)  # Make it required
     type = Column(Enum(TransactionType))
     amount = Column(Numeric(10, 2))
     description = Column(String)
     status = Column(Enum(TransactionStatus), default=TransactionStatus.PENDING)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    user_id = Column(Integer, ForeignKey("users.id"))
 
-    # Use string reference for relationship to avoid circular imports
-    wallet = relationship("Wallet", back_populates="transactions") 
+    user = relationship("User", back_populates="transactions")
+    wallet = relationship("Wallet", back_populates="transactions")  # Make relationship required 
