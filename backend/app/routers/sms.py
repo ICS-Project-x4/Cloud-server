@@ -8,10 +8,23 @@ from ..models.wallet import Transaction, TransactionType, TransactionStatus, Wal
 from ..schemas.sms import SMSCreate, SMSUpdate, SMS as SMSSchema, SMSInDB
 from ..auth.dependencies import get_current_user
 from ..models.user import User
+from ..services.mqtt import mqtt_service
 
 router = APIRouter(
     tags=["sms"]
 )
+
+@router.get("/test-mqtt")
+async def test_mqtt_connection():
+    """Test MQTT connection and return status"""
+    try:
+        is_connected = mqtt_service.test_connection()
+        if is_connected:
+            return {"status": "success", "message": "MQTT connection successful"}
+        else:
+            return {"status": "error", "message": "MQTT connection failed"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @router.post("/send", response_model=SMSSchema)
 async def send_sms(
@@ -87,10 +100,17 @@ async def send_sms(
     sim.messages_used += 1
 
     try:
-        # TODO: Integrate with actual SMS provider API here
-        # For now, we'll just mark it as sent
-        db_sms.status = SMSStatus.SENT
-        transaction.status = TransactionStatus.COMPLETED
+        # Send message via MQTT
+        mqtt_success = mqtt_service.send_sms(sms.recipient_number, sms.content)
+        
+        if mqtt_success:
+            db_sms.status = SMSStatus.SENT
+            transaction.status = TransactionStatus.COMPLETED
+        else:
+            db_sms.status = SMSStatus.FAILED
+            db_sms.error_message = "Failed to send message via MQTT"
+            transaction.status = TransactionStatus.FAILED
+            
         db.commit()
         return db_sms
     except Exception as e:
