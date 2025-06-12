@@ -53,21 +53,21 @@ export default function Sidebar() {
       <nav className="mt-6">
         {menuItems.map((item) => {
           const isActive = location.pathname === item.path;
-          return (
-            <Link
+            return (
+              <Link
               key={item.path}
               to={item.path}
               className={`flex items-center space-x-3 px-6 py-3 text-sm font-medium transition-colors ${
-                isActive
+                  isActive
                   ? 'text-white bg-blue-500/10 border-r-2 border-blue-500'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
-              }`}
-            >
+                }`}
+              >
               <item.icon className="h-5 w-5" />
               <span>{item.label}</span>
-            </Link>
-          );
-        })}
+              </Link>
+            );
+          })}
       </nav>
     </div>
   );

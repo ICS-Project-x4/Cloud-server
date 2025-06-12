@@ -14,10 +14,10 @@ console.log('Mounting React application...');
 try {
   const root = createRoot(rootElement);
   root.render(
-    <StrictMode>
-      <App />
-    </StrictMode>
-  );
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
   console.log('React application mounted successfully');
 } catch (error) {
   console.error('Failed to mount React application:', error);
