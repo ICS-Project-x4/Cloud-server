@@ -26,33 +26,14 @@ async def test_mqtt_connection():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@router.post("/send", response_model=SMSSchema)
+@router.post("/send", response_model=List[SMSSchema])
 async def send_sms(
     sms: SMSCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Check if SIM exists and belongs to user
-    sim = db.query(Sim).filter(Sim.id == sms.sim_id, Sim.user_id == current_user.id).first()
-    if not sim:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="SIM not found or does not belong to user"
-        )
-
-    # Check if SIM is active
-    if not sim.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="SIM is not active"
-        )
-
-    # Check message limit
-    if sim.messages_used >= sim.messages_limit:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Message limit reached for this SIM"
-        )
+    sent_messages = []
+    total_cost = len(sms.sim_ids)  # Cost is 1 per message
 
     # Get user's wallet
     wallet = db.query(Wallet).filter(Wallet.user_id == current_user.id).first()
@@ -62,57 +43,91 @@ async def send_sms(
             detail="User wallet not found"
         )
 
-    # Check if user has enough balance
-    if wallet.balance < 1:  # Cost per message
+    # Check if user has enough balance for all messages
+    if wallet.balance < total_cost:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Insufficient balance"
+            detail=f"Insufficient balance. Need {total_cost} credits but only have {wallet.balance}"
         )
 
-    # Create transaction for the SMS
-    transaction = Transaction(
-        user_id=current_user.id,
-        wallet_id=wallet.id,  # Associate with user's wallet
-        amount=-1,  # Cost per message
-        type=TransactionType.DEBIT,
-        description=f"SMS sent to {sms.recipient_number}"
-    )
-    db.add(transaction)
-    db.flush()
+    # Check if all SIMs exist and belong to user
+    sims = db.query(Sim).filter(
+        Sim.id.in_(sms.sim_ids),
+        Sim.user_id == current_user.id
+    ).all()
 
-    # Update wallet balance
-    wallet.balance -= 1  # Deduct cost per message
+    if len(sims) != len(sms.sim_ids):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or more SIMs not found or do not belong to user"
+        )
 
-    # Create SMS record
-    db_sms = SMS(
-        user_id=current_user.id,
-        sim_id=sms.sim_id,
-        transaction_id=transaction.id,
-        recipient_number=sms.recipient_number,
-        sender_number=sim.phone_number,
-        content=sms.content,
-        status=SMSStatus.PENDING,
-        direction=SMSDirection.OUTBOUND
-    )
-    db.add(db_sms)
-
-    # Update SIM message count
-    sim.messages_used += 1
+    # Check if all SIMs are active and have available messages
+    for sim in sims:
+        if not sim.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"SIM {sim.id} is not active"
+            )
+        if sim.messages_used >= sim.messages_limit:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Message limit reached for SIM {sim.id}"
+            )
 
     try:
-        # Send message via MQTT
-        mqtt_success = mqtt_service.send_sms(sms.recipient_number, sms.content)
-        
-        if mqtt_success:
-            db_sms.status = SMSStatus.SENT
+        # Create transaction for all messages
+        transaction = Transaction(
+            user_id=current_user.id,
+            wallet_id=wallet.id,
+            amount=-total_cost,
+            type=TransactionType.DEBIT,
+            description=f"Bulk SMS sent to {sms.recipient_number} via {len(sims)} SIMs"
+        )
+        db.add(transaction)
+        db.flush()
+
+        # Update wallet balance
+        wallet.balance -= total_cost
+
+        # Send message through each SIM
+        for sim in sims:
+            # Create SMS record
+            db_sms = SMS(
+                user_id=current_user.id,
+                sim_id=sim.id,
+                transaction_id=transaction.id,
+                recipient_number=sms.recipient_number,
+                sender_number=sim.phone_number,
+                content=sms.content,
+                status=SMSStatus.PENDING,
+                direction=SMSDirection.OUTBOUND
+            )
+            db.add(db_sms)
+
+            # Update SIM message count
+            sim.messages_used += 1
+
+            # Send message via MQTT
+            mqtt_success = mqtt_service.send_sms(sms.recipient_number, sms.content)
+            
+            if mqtt_success:
+                db_sms.status = SMSStatus.SENT
+            else:
+                db_sms.status = SMSStatus.FAILED
+                db_sms.error_message = "Failed to send message via MQTT"
+
+            sent_messages.append(db_sms)
+
+        # Update transaction status based on overall success
+        if all(msg.status == SMSStatus.SENT for msg in sent_messages):
             transaction.status = TransactionStatus.COMPLETED
         else:
-            db_sms.status = SMSStatus.FAILED
-            db_sms.error_message = "Failed to send message via MQTT"
             transaction.status = TransactionStatus.FAILED
-            
+
         db.commit()
-        return db_sms
+        return sent_messages
+
     except Exception as e:
         db.rollback()
         raise HTTPException(

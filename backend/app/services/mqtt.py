@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class MQTTService:
     def __init__(self):
         # Get configuration from environment variables with defaults
-        self.host = os.getenv("MQTT_HOST", "192.168.100.20")
+        self.host = os.getenv("MQTT_HOST", "192.168.95.187")
         self.port = int(os.getenv("MQTT_PORT", "1883"))
         self.client = mqtt.Client()
         self._setup_client()

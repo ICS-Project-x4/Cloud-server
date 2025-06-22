@@ -1,14 +1,89 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from ..database import get_db
 from ..models.user import User
 from ..models.sim import Sim, SimStatus
 from ..models.wallet import Transaction, TransactionType, TransactionStatus
+from ..models.api_key import ApiKey
 from ..schemas.sim import Sim as SimSchema, SimCreate, SimUpdate
 from ..auth.dependencies import get_current_active_user
+import httpx
+from datetime import datetime
 
 router = APIRouter()
+
+async def get_edge_api_key():
+    """Get API key from edge backend"""
+    async with httpx.AsyncClient() as client:
+        try:
+            # First, get the JWT token
+            auth_response = await client.post(
+                "http://localhost:5001/api/auth",
+                json={
+                    "username": "admin",
+                    "password": "admin123"
+                }
+            )
+            auth_response.raise_for_status()
+            auth_data = auth_response.json()
+            
+            # Return the API key from the response
+            return auth_data.get("api_key")
+        except httpx.HTTPError as e:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to get API key from edge backend: {str(e)}"
+            )
+
+@router.get("/marketplace", response_model=List[SimSchema])
+async def get_all_sims_from_edge():
+    """Get all SIM cards from the edge backend"""
+    async with httpx.AsyncClient() as client:
+        try:
+            # Get the API key
+            api_key = "5f427c4bc12f35af8648807151aa2742f5a98a929feebc8827162cc6885a9394"
+            if not api_key:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Failed to get API key from edge backend"
+                )
+
+            # Use the API key to get SIM cards
+            response = await client.get(
+                "http://192.168.95.187:5001/api/sim-cards",
+                headers={
+                    "X-API-Key": api_key
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            # Transform the edge backend data to match our schema
+            transformed_sims = []
+            current_time = datetime.utcnow()
+            expiry_date = datetime.utcnow().replace(year=current_time.year + 1)  # 1 year from now
+            
+            for sim in data.get("sim_cards", []):
+                transformed_sims.append({
+                    "id": 0,  # Temporary ID since these are marketplace SIMs
+                    "iccid": sim["id"],  # Using the edge backend's id as ICCID
+                    "phone_number": sim["number"],
+                    "status": SimStatus.ACTIVE ,
+                    "is_active": sim["status"] == "active",
+                    "messages_limit": 1000,  # Default value
+                    "messages_used": 0,  # Default value
+                    "user_id": 0,  # No user assigned yet
+                    "expiry_date": expiry_date,
+                    "created_at": current_time,
+                    "updated_at": current_time
+                })
+            return transformed_sims
+        except httpx.HTTPError as e:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to fetch SIM cards from edge backend: {str(e)}"
+            )
 
 @router.get("/", response_model=List[SimSchema])
 def read_sims(
@@ -35,12 +110,17 @@ def create_sim(
             detail="SIM with this ICCID or phone number already exists"
         )
 
-    # Create the SIM
-    db_sim = Sim(
-        **sim.model_dump(),
-        user_id=current_user.id,
-        status=SimStatus.INACTIVE
-    )
+    # Create the SIM with default values
+    sim_data = sim.model_dump()
+    sim_data.update({
+        "user_id": current_user.id,
+        "status": SimStatus.ACTIVE,  # Set as active by default
+        "is_active": True,  # Set as active by default
+        "messages_limit": 150,  # Default message limit
+        "messages_used": 0  # Start with 0 messages used
+    })
+    
+    db_sim = Sim(**sim_data)
     db.add(db_sim)
     db.commit()
     db.refresh(db_sim)

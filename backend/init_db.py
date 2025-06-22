@@ -30,11 +30,11 @@ def init_db():
             # Create a SIM for the test user
             sim = Sim(
                 user_id=test_user.id,
-                iccid="89012345678901234567",
-                phone_number="+33612345678",
+                iccid="a5dab011-136e-4c0d-8d49-2c067201ce0e",
+                phone_number="+213699534464",
                 status=SimStatus.ACTIVE,
                 is_active=True,
-                messages_limit=1000,
+                messages_limit=150,
                 messages_used=0,
                 expiry_date=datetime.utcnow() + timedelta(days=365)  # Valid for 1 year
             )
@@ -61,11 +61,11 @@ def init_db():
                 # Create a SIM for the existing user
                 sim = Sim(
                     user_id=test_user.id,
-                    iccid="89012345678901234567",
-                    phone_number="+33612345678",
+                    iccid="a5dab011-136e-4c0d-8d49-2c067201ce0e",
+                    phone_number="+213699534464",
                     status=SimStatus.ACTIVE,
                     is_active=True,
-                    messages_limit=1000,
+                    messages_limit=150,
                     messages_used=0,
                     expiry_date=datetime.utcnow() + timedelta(days=365)
                 )

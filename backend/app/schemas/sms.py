@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from .user import User
 from .sim import Sim
@@ -10,7 +10,7 @@ class SMSBase(BaseModel):
     content: str = Field(..., min_length=1, max_length=1600)  # SMS can be up to 1600 characters (concatenated)
 
 class SMSCreate(SMSBase):
-    sim_id: int
+    sim_ids: List[int]  # Changed from sim_id to sim_ids to support multiple SIMs
 
 class SMSUpdate(BaseModel):
     status: Optional[str] = None
